@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Highway Delite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            background-color: #1a1a1a;
+            padding: 15px 60px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            background-color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: #1a1a1a;
+        }
+
+        .logo-text {
+            color: #fff;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .logo-text span {
+            display: block;
+            font-size: 14px;
+            font-weight: 400;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .search-input {
+            padding: 10px 20px;
+            width: 300px;
+            border: none;
+            border-radius: 5px;
+            background-color: #e8e8e8;
+            font-size: 14px;
+        }
+
+        .search-input::placeholder {
+            color: #888;
+        }
+
+        .search-btn {
+            padding: 10px 30px;
+            background-color: #ffd700;
+            border: none;
+            border-radius: 5px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .search-btn:hover {
+            background-color: #ffed4e;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 60px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 25px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        }
+
+        .card-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .card-content {
+            padding: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .location-tag {
+            background-color: #e8e8e8;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .card-description {
+            color: #666;
+            font-size: 13px;
+            line-height: 1.5;
+            margin-bottom: 15px;
+            min-height: 42px;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .price-container {
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+        }
+
+        .price-label {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .price {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .view-details-btn {
+            background-color: #ffd700;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 5px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background-color 0.3s ease;
+        }
+
+        .view-details-btn:hover {
+            background-color: #ffed4e;
+        }
+
+        .dimension-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: #0095ff;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .border-highlight {
+            border: 3px solid #0095ff;
+        }
+
+        @media (max-width: 1200px) {
+            .grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .header {
+                padding: 15px 20px;
+                flex-direction: column;
+                gap: 15px;
+            }
+            .container {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <div class="logo">HD</div>
+            <div class="logo-text">
+                highway
+                <span>delite</span>
+            </div>
+        </div>
+        <div class="search-container">
+            <input type="text" class="search-input" placeholder="Search experiences">
+            <button class="search-btn">Search</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="grid">
+            <!-- Card 1 - Kayaking (with border) -->
+            <div class="card border-highlight">
+                <img src="https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400&h=250&fit=crop" alt="Kayaking" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Kayaking</h3>
+                        <span class="location-tag">Udupi</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹999</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2 - Nandi Hills Sunrise -->
+            <div class="card">
+                <img src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=250&fit=crop" alt="Nandi Hills Sunrise" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Nandi Hills Sunrise</h3>
+                        <span class="location-tag">Bangalore</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹899</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 3 - Coffee Trail -->
+            <div class="card">
+                <img src="https://images.unsplash.com/photo-1447933601403-0c6688de566e?w=400&h=250&fit=crop" alt="Coffee Trail" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Coffee Trail</h3>
+                        <span class="location-tag">Coorg</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹1299</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 4 - Kayaking -->
+            <div class="card">
+                <img src="https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=400&h=250&fit=crop" alt="Kayaking" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Kayaking</h3>
+                        <span class="location-tag">Udupi, Karnataka</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹999</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 5 - Nandi Hills Sunrise (with badge) -->
+            <div class="card">
+                <div class="dimension-badge">280 × 312 Hug</div>
+                <img src="https://images.unsplash.com/photo-1495616811223-4d98c6e9c869?w=400&h=250&fit=crop" alt="Nandi Hills Sunrise" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Nandi Hills Sunrise</h3>
+                        <span class="location-tag">Bangalore</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹899</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 6 - Boat Cruise -->
+            <div class="card">
+                <img src="https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=400&h=250&fit=crop" alt="Boat Cruise" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Boat Cruise</h3>
+                        <span class="location-tag">Sunderban</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹999</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 7 - Bunjee Jumping -->
+            <div class="card">
+                <img src="https://images.unsplash.com/photo-1516738901171-8eb4fc13bd20?w=400&h=250&fit=crop" alt="Bunjee Jumping" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Bunjee Jumping</h3>
+                        <span class="location-tag">Manali</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹999</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 8 - Coffee Trail -->
+            <div class="card">
+                <img src="https://images.unsplash.com/photo-1511884642898-4c92249e20b6?w=400&h=250&fit=crop" alt="Coffee Trail" class="card-image">
+                <div class="card-content">
+                    <div class="card-header">
+                        <h3 class="card-title">Coffee Trail</h3>
+                        <span class="location-tag">Coorg</span>
+                    </div>
+                    <p class="card-description">Curated small-group experience. Certified guide. Safety first with gear included.</p>
+                    <div class="card-footer">
+                        <div class="price-container">
+                            <span class="price-label">From</span>
+                            <span class="price">₹1299</span>
+                        </div>
+                        <button class="view-details-btn">View Details</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add click handlers for buttons
+        document.querySelectorAll('.view-details-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const card = this.closest('.card');
+                const title = card.querySelector('.card-title').textContent;
+                alert(`Viewing details for: ${title}`);
+            });
+        });
+
+        document.querySelector('.search-btn').addEventListener('click', function() {
+            const searchValue = document.querySelector('.search-input').value;
+            if(searchValue) {
+                alert(`Searching for: ${searchValue}`);
+            }
+        });
+
+        document.querySelector('.search-input').addEventListener('keypress', function(e) {
+            if(e.key === 'Enter') {
+                document.querySelector('.search-btn').click();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -90,7 +90,7 @@ def row_from_outputs(out_dir, vid, qc, audio_path):
     }
 
 
-def apply_edits(row, out_dir):
+def apply_edits(row, out_dir, fields=None):
     """Rebuild <id>.en.srt, <id>.json and <id>.qc.json from an edited row. Returns (meta, qc)."""
     vid = row["id"]
     os.makedirs(out_dir, exist_ok=True)
@@ -108,6 +108,8 @@ def apply_edits(row, out_dir):
     words = sum(len(c["text"].split()) for c in cues)
     wpm = round(words / (duration / 60.0), 1) if duration else 0.0
     meta = dict(row["meta"] or {})
+    order = fields or pipeline.DEFAULT_FIELDS  # jsonb does not keep key order; restore the reference order
+    meta = {k: meta.get(k) for k in order} if set(order) >= set(meta) else meta
     if "narration_wpm" in meta:
         meta["narration_wpm"] = wpm
     json.dump(meta, open(os.path.join(out_dir, f"{vid}.json"), "w", encoding="utf-8"), indent=2, ensure_ascii=False)

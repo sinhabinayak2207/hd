@@ -166,13 +166,13 @@ def handle(drive, cfg, fields, item, names, db):
             shutil.rmtree(job, ignore_errors=True)
 
 
-def sync_edits(drive, db):
+def sync_edits(drive, db, fields=None):
     """Write subtitle and metadata edits made in the dashboard back to the Drive deliverables."""
     for row in db.dirty():
         vid = row["id"]
         out_dir = os.path.join(WORK, "_edits", vid)
         try:
-            meta, qc = store.apply_edits(row, out_dir)
+            meta, qc = store.apply_edits(row, out_dir, fields)
             for f in (f"{vid}.en.srt", f"{vid}.json", f"{vid}.qc.json"):
                 drive.put_file(os.path.join(out_dir, f), f"output/{vid}/{f}")
             update_report(drive, qc)
@@ -186,7 +186,7 @@ def sync_edits(drive, db):
 
 def tick(drive, cfg, fields, db):
     if db.enabled:
-        sync_edits(drive, db)
+        sync_edits(drive, db, fields)
     items = drive.inbox()
     names = {i["Name"] for i in items}
     for item in sorted(items, key=lambda i: i.get("ModTime", "")):

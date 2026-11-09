@@ -1,5 +1,5 @@
 {
-  "drive_root": "gdrive:Vetto",
+  "drive_root": "gdrive:ClusterX AI",
   "rclone": "/mnt/c/Users/sinha/tools/rclone/rclone.exe",
   "rclone_config": "C:/Users/sinha/AppData/Roaming/rclone/rclone.conf",
   "whisper_model": "small.en",

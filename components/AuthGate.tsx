@@ -22,7 +22,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (!session) {
     return (
       <main className="wrap narrow">
-        <h1>Vetto review</h1>
+        <h1>ClusterX AI</h1>
         <p className="muted">Sign in to review subtitles and metadata.</p>
         <form
           className="card stack"
@@ -47,7 +47,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   return (
     <>
       <header className="topbar">
-        <a href="/" className="brand">Vetto review</a>
+        <a href="/" className="brand">ClusterX AI</a>
         <span className="muted small">{session.user.email}</span>
         <button className="ghost small" onClick={() => supabase.auth.signOut()}>Sign out</button>
       </header>

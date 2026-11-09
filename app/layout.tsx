@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Vetto review",
+  title: "ClusterX AI",
   description: "Review and edit subtitles, labels and metadata for processed videos",
 };
 

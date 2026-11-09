@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import AuthGate from "@/components/AuthGate";
-import { supabase, type Check, type Video } from "@/lib/supabase";
+import { supabase, downloadDeliverables, type Check, type Video } from "@/lib/supabase";
+import UploadPanel from "@/components/UploadPanel";
 
 function Pill({ c, text }: { c?: Check; text?: string }) {
   if (!c || c.ok === null || c.ok === undefined) return <span className="pill none">{text ?? "–"}</span>;
@@ -12,6 +13,19 @@ function Pill({ c, text }: { c?: Check; text?: string }) {
 function List() {
   const [rows, setRows] = useState<Video[] | null>(null);
   const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState("");
+  const download = async (id: string) => {
+    setBusyId(id);
+    setError("");
+    const { data, error } = await supabase.from("videos").select("*").eq("id", id).single();
+    try {
+      if (error || !data) throw new Error(error?.message || "not found");
+      await downloadDeliverables(data as Video);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    setBusyId("");
+  };
 
   useEffect(() => {
     const load = () =>
@@ -33,9 +47,10 @@ function List() {
       <div>
         <h1>Videos</h1>
         <p className="muted">
-          Upload to Drive → <b>Vetto/inbox</b>. Processed videos appear here within a few minutes. Open one to review its subtitles.
+          Add a video below. It shows up here a few minutes after processing. Open one to review and edit its subtitles.
         </p>
       </div>
+      <UploadPanel existing={new Set((rows || []).map((r) => r.id))} />
       {error && <p className="bad">{error}</p>}
       {rows === null ? (
         <p className="muted">Loading…</p>
@@ -47,7 +62,7 @@ function List() {
             <thead>
               <tr>
                 <th>Video</th><th>Category (AI)</th><th>Length</th><th>1080p</th><th>WPM</th>
-                <th>Descriptive</th><th>Pauses</th><th>Subtitles</th><th>Drive</th>
+                <th>Descriptive</th><th>Pauses</th><th>Subtitles</th><th>Drive</th><th>Files</th>
               </tr>
             </thead>
             <tbody>
@@ -73,6 +88,14 @@ function List() {
                     <td>{v.reviewed ? <span className="pill ok">reviewed</span> : <span className="pill warn">needs review</span>}</td>
                     <td className="small">
                       {v.dirty ? <span className="pill warn">sync pending</span> : v.synced_at ? <span className="pill ok">synced</span> : <span className="pill none">original</span>}
+                    </td>
+                    <td>
+                      {v.status === "ready" && (
+                        <button className="icon" title="Download <id>.narration.mp3, <id>.en.srt, <id>.json" disabled={busyId === v.id} onClick={() => download(v.id)}>
+                          {busyId === v.id ? "…" : "⬇ mp3 · srt · json"}
+                        </button>
+                      )}
+                      {v.status === "processing" && <span className="pill warn">processing</span>}
                     </td>
                   </tr>
                 );

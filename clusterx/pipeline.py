@@ -1,6 +1,6 @@
-"""One recording in, the Vetto deliverable set out: <id>.mp4, <id>.narration.mp3, <id>.en.srt, <id>.json, plus <id>.qc.json.
+"""One recording in, the deliverable set out: <id>.mp4, <id>.narration.mp3, <id>.en.srt, <id>.json, plus <id>.qc.json.
 
-Usage: python -m vetto.pipeline <video> <out_dir> [--config config.json] [--id ID] [--script script.json]
+Usage: python -m clusterx.pipeline <video> <out_dir> [--config config.json] [--id ID] [--script script.json]
 """
 import argparse
 import json
@@ -219,7 +219,7 @@ def process(video, out_dir, cfg, vid=None, script=None, fields=None, log=print):
     if cfg["llm"].get("api_key") and cues:
         log(f"[{vid}] AI review ({cfg['llm'].get('model')})")
         try:
-            from vetto import llm
+            from clusterx import llm
             review = llm.review([c["text"].replace("\n", " ") for c in cues], cfg["llm"])
         except Exception as e:  # noqa: BLE001
             review_error = f"{type(e).__name__}: {e}"[:300]

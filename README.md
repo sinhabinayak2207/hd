@@ -1,78 +1,66 @@
-# Vetto video platform
+# ClusterX AI video platform
 
-Upload a recording to Google Drive. A few minutes later, its Vetto deliverable set appears next to it, along with a QC report.
+You add a first-person narrated video. The platform produces the deliverable set for it:
+- `<id>.mp4`
+- `<id>.narration.mp3`
+- `<id>.en.srt`
+- `<id>.json`
 
-## Drive folders (`My Drive/Vetto`)
+It also writes a QC report and opens everything in a review dashboard, where a person checks and edits the subtitles.
 
-| Folder | What goes there |
-|---|---|
-| `inbox/` | **You upload here.** Supported: `.mp4 .mov .mkv .avi .m4v .webm`. The file name becomes the `<id>`, for example `carp-0001.mp4`. |
-| `inbox/<id>.script.txt` | Optional, but the brief wants it. Line 1 is the `script_title`. The following lines are the `script_text` written before recording. (Or use `<id>.script.json` with the same keys.) |
-| `output/<id>/` | `<id>.mp4`, `<id>.narration.mp3`, `<id>.en.srt`, `<id>.json`, `<id>.qc.json` |
-| `output/report.csv` | One row per video with every check, so you can see all 14 at a glance. |
-| `done/` | The original upload, moved here after processing. |
-| `failed/` | Uploads that could not be processed, plus `<id>.error.txt` explaining why. |
+## Parts
 
-## What is automatic and what is not
+| Part | Where it runs | What it does |
+|---|---|---|
+| Dashboard (`app/`, `components/`, `lib/`) | Vercel | Sign in, add videos, review and edit subtitles and metadata, download files |
+| Worker (`clusterx/`) | Laptop (WSL) or any server | Pulls in new videos and runs ffmpeg, Whisper, the QC checks and the optional AI review, then writes results to Drive and Supabase |
+| Supabase | Cloud | Logins, video rows (subtitles, metadata, QC), the upload job queue, the narration MP3s |
+| Google Drive (`ClusterX AI/`) | Cloud | `inbox/` for new videos, `output/<id>/` with the deliverables, plus `report.csv`, `done/` and `failed/` |
 
-Automatic (in `<id>.qc.json` and `report.csv`):
+## Adding a video (dashboard → "Add a video")
+
+1. **From computer.** Pick a file. It goes from the browser straight into Drive `inbox/`, in 16 MB chunks with automatic retry, so large files are fine. Nothing goes through Vercel.
+2. **Google Drive link.** Paste a link to a file shared as "Anyone with the link". The worker downloads it.
+3. **Drive folder.** Drop the file into `ClusterX AI/inbox/` yourself. Optionally add `<id>.script.txt`: the first line is the script title, the rest is the script text.
+
+The video ID becomes the file name of every deliverable. A script title and text written before recording can be entered with the upload. Without them, the AI drafts both from the narration and the QC marks them as an AI draft.
+
+## Review (dashboard → open a video)
+
+- An audio player plus the subtitle table. You can edit each line's text and its start and end time (or set them from the audio position), and you can insert, merge and delete lines.
+- Metadata (`script_title`, `script_text`, `summary`, IDs), plus a "Subtitles reviewed by me" tick.
+- Live checks while you edit: wpm, gaps over 10 s, line length and overlaps.
+- **Save** (Ctrl+S). Within a minute, the worker rewrites `<id>.en.srt`, `<id>.json` (with the wpm recomputed from the edited subtitles), `<id>.qc.json` and `report.csv` in Drive.
+- **⬇ Download files** downloads `<id>.narration.mp3`, `<id>.en.srt` and `<id>.json` to your computer, built from the latest saved edits. The video list has the same button on every row.
+
+## Automatic checks
+
 - Resolution: 1080 px or more on the short side.
 - Length: 2 to 10 minutes.
-- Narration wpm: at least 25, counted from the SRT.
-- Pauses: no pause longer than 10 s. Measured two ways: gaps between spoken words, and audio silence.
-- Descriptive narration: at least 90%. The AI labels each subtitle line as environment, task or other.
-- Spoken PII: names, numbers or addresses said aloud.
-- A guess at which of the 7 categories the video belongs to.
-- A 1–2 sentence summary for the JSON.
-- A complete file set with matching names.
+- Narration: at least 25 wpm.
+- Pauses: none longer than 10 s, measured both as gaps between words and as audio silence.
+- Descriptive narration: at least 90% describes the environment or the task. The AI judges each subtitle line.
+- Spoken PII.
+- Category guess.
+- Summary.
+- A complete file set.
 
-Still needs a person, because the brief says so or a machine cannot judge it:
-- **Review every SRT** for text and timing.
-- PII on screen: third-party faces, name tags, documents, license plates.
-- Professional context, one complete task, varied steps.
-- No TV, music or conversation in the background.
+These need a person: reviewing every SRT, checking for PII on screen, a professional setting, one complete task, and no background TV, music or conversation.
 
-## JSON fields
+## Configuration (`config.json`, git-ignored; copy from `config.example.json`)
 
-The field list comes from `reference_sample.json`. When you get Vetto's reference sample, replace this file with it; the output uses exactly its keys, in its order, and adds nothing.
+- `drive_root`: the rclone remote and folder (default `gdrive:ClusterX AI`).
+- `llm`: any OpenAI-compatible endpoint (`base_url`, `api_key`, `model`). The default is Command Code with `Qwen/Qwen3.7-Flash`, which needs its Provider plan. Without a working key, the AI checks are skipped and noted in the QC.
+- `supabase`: `url` and `secret_key`. These are for the worker only and are never committed.
+- `metadata_template`: `reference_sample.json`. The output JSON uses exactly these keys, in this order.
+- `whisper_model`: `small.en` by default. `medium.en` gives better subtitles but is about 3 times slower.
 
-If no script file is uploaded, the AI drafts `script_title` and `script_text` from the narration. The QC marks these as "AI draft", so edit them.
+The dashboard uses the Supabase publishable key, which is safe in the browser. Row-level security allows only emails listed in the `editors` table, and lets them change only subtitles, metadata, the review tick and their own upload jobs. To add an editor, create the user in Supabase → Authentication, then run `insert into editors(email) values ('their@email');`.
 
-## AI (`config.json` → `llm`)
+## Running the worker
 
-Any OpenAI-compatible endpoint works. Setup: `cp config.example.json config.json`, then fill in `api_key`. `config.json` is git-ignored, so keys never reach the repo.
-The default is Command Code (`https://api.commandcode.ai/provider/v1`, model `Qwen/Qwen3.7-Flash`). Its API needs the Provider plan or higher; on the Go plan every call returns `upgrade_required`.
-Without a working key, everything else still runs. Only the descriptive-%, PII, category and summary checks are skipped, and the QC file says why.
+- Windows: double-click `start_platform.bat`. In WSL: `bash start_platform.sh`.
+- It hands out upload URLs within seconds and checks for new work every 20 s. The log is `platform.log`.
+- To process one local file without Drive: `python -m clusterx.pipeline video.mp4 out_dir --id carp-0001 --script script.json`.
 
-## Review dashboard (Vercel + Supabase)
-
-The Next.js app at the repo root (`app/`, `components/`, `lib/`) is the review dashboard. Vercel builds it on every push.
-
-- Sign in with an editor account. Only emails listed in the `editors` table can read or edit, enforced by row-level security.
-- **Videos**: every processed upload, with its checks (length, 1080p, wpm, descriptive %, pauses), review state and Drive sync state.
-- **Video page**:
-  - narration audio player
-  - subtitle editor: edit text, start and end times (or set them from the audio position), the AI label, insert, merge or delete lines
-  - metadata editor (`script_title`, `script_text`, `summary`, IDs)
-  - a "Subtitles reviewed by me" tick
-  - live wpm, descriptive % and pause warnings
-- **Save** (Ctrl+S) stores the edit in Supabase and marks it dirty. Within about a minute, the worker rewrites `<id>.en.srt`, `<id>.json` (wpm recomputed from the edited subtitles), `<id>.qc.json` and `report.csv` in Drive, then marks the video "synced".
-
-How the data moves:
-
-```
-Drive inbox → worker (laptop: ffmpeg + whisper + AI) → Drive output/<id>/ + Supabase row + preview audio
-dashboard edit → Supabase (dirty) → worker → Drive output/<id>/ (srt, json, qc.json)
-```
-
-Supabase setup (already done for the `vetto` project): tables `videos` and `editors`, the private storage bucket `narration` and the RLS policies. The worker uses the secret key from `config.json` → `supabase.secret_key` (local only, never committed). The dashboard uses the publishable key, which is safe in the browser. Override it with `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` if needed.
-
-Add another editor: create the user in Supabase → Authentication, then `insert into editors(email) values ('their@email');`.
-
-## Running
-
-- Windows: double-click `start_platform.bat`. Or run `wsl -d Ubuntu-24.04 -- bash /mnt/c/Users/sinha/Downloads/vetto_platform/start_platform.sh`.
-- It checks the inbox every 60 s. The log is in `platform.log`.
-- Process one local file without Drive: `~/vetto-env/bin/python -m vetto.pipeline video.mp4 out_dir --id carp-0001 --script carp-0001.script.json`
-
-Speed on this machine: about 2 minutes of processing for a 1.5-minute video, using whisper `small.en` on the CPU. Set `"whisper_model": "medium.en"` for better subtitles, at roughly 3 times slower.
+The rclone remote needs the full `drive` scope; with `drive.file`, files dropped into the inbox from another app are not seen. Run `rclone config reconnect gdrive:` once to grant it. rclone's shared Google client ID has a global rate limit; a client ID of your own avoids the occasional `403 quota` (see rclone's docs on making your own client ID).

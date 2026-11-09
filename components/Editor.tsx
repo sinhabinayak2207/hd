@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase, fmtTime, parseTime, words, type Cue, type Label, type Video } from "@/lib/supabase";
+import { supabase, fmtTime, parseTime, words, downloadDeliverables, type Cue, type Video } from "@/lib/supabase";
+import Compare from "@/components/Compare";
 
-const LABELS: Label[] = ["environment", "task", "other"];
 // Fields the pipeline computes or the brief fixes; shown but not editable.
 const LOCKED = new Set(["video_id", "narration_wpm", "narration_language"]);
 
@@ -41,6 +41,10 @@ export default function Editor({ id }: { id: string }) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const [follow, setFollow] = useState(true);
+  const [dlError, setDlError] = useState("");
+  const [base, setBase] = useState<"ai" | "human">("ai");
+  const [audioSource, setAudioSource] = useState<"ai" | "human">("ai");
+  const [confirmLoad, setConfirmLoad] = useState<"ai" | "human" | null>(null);
   const audio = useRef<HTMLAudioElement>(null);
   const stopAt = useRef<number | null>(null);
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
@@ -54,12 +58,39 @@ export default function Editor({ id }: { id: string }) {
     setCues((v.cues || []).map((c) => ({ ...c, label: c.label ?? null })));
     setMeta(v.meta || {});
     setReviewed(v.reviewed);
+    setBase(v.base || "ai");
+    setAudioSource(v.audio_source === "human" && v.human_audio_path ? "human" : "ai");
     setChanged(false);
-    if (v.audio_path) {
-      const { data: s } = await supabase.storage.from("narration").createSignedUrl(v.audio_path, 6 * 3600);
-      setAudioUrl(s?.signedUrl ?? null);
-    }
   }, [id]);
+
+  // The player plays the narration the reviewer chose to deliver.
+  const audioPath = audioSource === "human" && video?.human_audio_path ? video.human_audio_path : video?.audio_path;
+  useEffect(() => {
+    if (!audioPath) return setAudioUrl(null);
+    supabase.storage.from("narration").createSignedUrl(audioPath, 6 * 3600).then(({ data }) => setAudioUrl(data?.signedUrl ?? null));
+  }, [audioPath]);
+
+  /** Replace the reviewer's working copy with the AI or the human version (the reviewer then edits it and saves). */
+  const loadVersion = (k: "ai" | "human") => {
+    if (!video) return;
+    const src = k === "ai" ? video.ai : video.human;
+    if (!src) return;
+    const aiMeta = video.ai?.meta || {};
+    const order = Array.isArray(video.qc?.field_order) ? (video.qc.field_order as string[]) : Object.keys(aiMeta);
+    const m: Record<string, unknown> = {};
+    for (const key of order) m[key] = k === "human" && key in (src.meta || {}) ? src.meta[key] : aiMeta[key] ?? null;
+    if ("video_id" in m) m.video_id = video.id;
+    if (src.cues.length) setCues(src.cues.map((c) => ({ ...c, label: k === "ai" ? c.label ?? null : null })));
+    setMeta(m);
+    setBase(k);
+    setChanged(true);
+    setConfirmLoad(null);
+  };
+
+  const refreshVersions = async () => {
+    const { data } = await supabase.from("videos").select("ai,human,human_audio_path").eq("id", id).maybeSingle();
+    if (data) setVideo((v) => (v ? { ...v, ...data } : v));
+  };
 
   useEffect(() => {
     load();
@@ -130,8 +161,6 @@ export default function Editor({ id }: { id: string }) {
   const stats = useMemo(() => {
     const dur = video?.duration_s || 0;
     const total = cues.reduce((n, c) => n + words(c.text), 0);
-    const labelled = cues.every((c) => c.label);
-    const good = cues.filter((c) => c.label === "environment" || c.label === "task").reduce((n, c) => n + words(c.text), 0);
     const issues: string[] = [];
     const sorted = [...cues].sort((a, b) => a.start - b.start);
     let last = 0;
@@ -145,12 +174,9 @@ export default function Editor({ id }: { id: string }) {
       if (!c.text.trim()) issues.push(`Empty line at ${fmtTime(c.start)} (it will be dropped)`);
     });
     if (dur && dur - last > 10) issues.push(`No narration for the last ${(dur - last).toFixed(1)} s`);
-    const unl = cues.filter((c) => !c.label).length;
-    if (unl) issues.push(`${unl} line(s) have no label`);
     return {
       total,
       wpm: dur ? Math.round((total / (dur / 60)) * 10) / 10 : 0,
-      pct: labelled && total ? Math.round((1000 * good) / total) / 10 : null,
       issues,
     };
   }, [cues, video?.duration_s]);
@@ -164,13 +190,13 @@ export default function Editor({ id }: { id: string }) {
     const editedAt = new Date().toISOString();
     const { error } = await supabase
       .from("videos")
-      .update({ cues: clean, meta, reviewed, dirty: true, edited_at: editedAt })
+      .update({ cues: clean, meta, reviewed, base, audio_source: audioSource, dirty: true, edited_at: editedAt })
       .eq("id", id);
     setSaving(false);
     if (error) return setError(error.message);
     setCues(clean);
     setChanged(false);
-    setVideo((v) => (v ? { ...v, dirty: true, edited_at: editedAt } : v));
+    setVideo((v) => (v ? { ...v, dirty: true, edited_at: editedAt, base, audio_source: audioSource } : v));
     setSavedMsg("Saved. The worker writes the new SRT and JSON to Drive within about a minute.");
   };
 
@@ -207,13 +233,72 @@ export default function Editor({ id }: { id: string }) {
             Subtitles reviewed by me
           </label>
           <button className="primary" onClick={save} disabled={!changed || saving}>{saving ? "Saving…" : changed ? "Save (Ctrl+S)" : "Saved"}</button>
+          <button
+            disabled={changed}
+            title={changed ? "Save your edits first" : "Download <id>.narration.mp3, <id>.en.srt and <id>.json"}
+            onClick={() => {
+              setDlError("");
+              downloadDeliverables({ ...video, cues, meta, audio_source: audioSource }).catch((e) => setDlError(String(e.message || e)));
+            }}
+          >
+            ⬇ Download files
+          </button>
         </div>
       </div>
       {error && <p className="bad">{error}</p>}
+      {dlError && <p className="bad">{dlError}</p>}
+      <div className="row small">
+        <span className="muted">Download one:</span>
+        {(["mp3", "srt", "json"] as const).map((k) => (
+          <button key={k} className="icon" disabled={changed}
+            onClick={() => downloadDeliverables({ ...video, cues, meta, audio_source: audioSource }, [k]).catch((e) => setDlError(String(e.message || e)))}>
+            {k === "mp3" ? `${video.id}.narration.mp3` : k === "srt" ? `${video.id}.en.srt` : `${video.id}.json`}
+          </button>
+        ))}
+      </div>
       {savedMsg && <p className="ok">{savedMsg}</p>}
       <p className="small muted">
         Drive: {video.dirty ? <span className="pill warn">sync pending</span> : video.synced_at ? <span className="pill ok">synced {new Date(video.synced_at).toLocaleString()}</span> : <span className="pill none">original output</span>}
       </p>
+
+      <section className="card stack">
+        <h2 style={{ margin: 0 }}>Reviewer version</h2>
+        <p className="small muted" style={{ margin: 0 }}>
+          The editor below always holds the reviewer&apos;s version. Only this version is delivered: Drive output, downloads and
+          narration_wpm all come from it. It was loaded from the <b>{base === "human" ? "human-uploaded" : "AI-generated"}</b> version.
+        </p>
+        <div className="row">
+          <span className="small">Start over from:</span>
+          {(["ai", "human"] as const).map((k) => {
+            const has = k === "ai" ? !!video.ai : !!video.human;
+            return (
+              <button key={k} disabled={!has} title={has ? "" : "No human-made files for this video yet (add them in Compare below)"}
+                onClick={() => setConfirmLoad(k)}>
+                {k === "ai" ? "AI generated" : "Uploaded by a person"}{base === k ? " (current)" : ""}
+              </button>
+            );
+          })}
+          {confirmLoad && (
+            <span className="row small" style={{ gap: 6 }}>
+              <span className="bad">Replace the subtitles and metadata in the editor with the {confirmLoad === "ai" ? "AI" : "human"} version?</span>
+              <button className="primary icon" onClick={() => loadVersion(confirmLoad)}>Yes, load it</button>
+              <button className="icon" onClick={() => setConfirmLoad(null)}>Cancel</button>
+            </span>
+          )}
+        </div>
+        <div className="row small">
+          <span>Narration MP3 to deliver:</span>
+          <label className="row" style={{ flexDirection: "row", fontSize: 13, color: "var(--text)" }}>
+            <input type="radio" name="audio" checked={audioSource === "ai"} onChange={() => { setAudioSource("ai"); setChanged(true); }} />
+            extracted from the video
+          </label>
+          <label className="row" style={{ flexDirection: "row", fontSize: 13, color: "var(--text)" }}>
+            <input type="radio" name="audio" disabled={!video.human_audio_path} checked={audioSource === "human"}
+              onChange={() => { setAudioSource("human"); setChanged(true); }} />
+            uploaded by a person{!video.human_audio_path && " (none yet)"}
+          </label>
+        </div>
+      </section>
 
       <div className="grid2">
         <section className="card stack">
@@ -231,8 +316,7 @@ export default function Editor({ id }: { id: string }) {
           </ul>
           <div className="small">
             <b>Live, with your edits:</b> {stats.total} words · {stats.wpm} wpm{" "}
-            <span className={`pill ${stats.wpm >= 25 ? "ok" : "bad"}`}>{stats.wpm >= 25 ? "≥25" : "<25"}</span> · descriptive{" "}
-            {stats.pct === null ? <span className="pill none">label every line</span> : <span className={`pill ${stats.pct >= 90 ? "ok" : "bad"}`}>{stats.pct}%</span>}
+            <span className={`pill ${stats.wpm >= 25 ? "ok" : "bad"}`}>{stats.wpm >= 25 ? "≥25" : "<25"}</span>
           </div>
           {stats.issues.length > 0 && (
             <ul className="issues small" style={{ margin: 0, paddingLeft: 18 }}>
@@ -295,7 +379,7 @@ export default function Editor({ id }: { id: string }) {
         <div className="scroll">
           <table className="cues">
             <thead>
-              <tr><th>#</th><th>Start</th><th>End</th><th style={{ width: "60%" }}>Text</th><th>Label (AI)</th><th></th></tr>
+              <tr><th>#</th><th>Start</th><th>End</th><th style={{ width: "60%" }}>Text</th><th></th></tr>
             </thead>
             <tbody>
               {cues.map((c, i) => (
@@ -315,12 +399,6 @@ export default function Editor({ id }: { id: string }) {
                   </td>
                   <td><textarea rows={Math.max(1, c.text.split("\n").length)} value={c.text} onChange={(e) => edit(i, { text: e.target.value })} /></td>
                   <td>
-                    <select value={c.label ?? ""} onChange={(e) => edit(i, { label: (e.target.value || null) as Label })}>
-                      <option value="">–</option>
-                      {LABELS.map((l) => <option key={l!} value={l!}>{l}</option>)}
-                    </select>
-                  </td>
-                  <td>
                     <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
                       <button className="icon" title="Play this line" onClick={() => play(c)} disabled={!audioUrl}>▶</button>
                       <button className="icon" title="Insert a line after" onClick={() => insertAfter(i)}>＋</button>
@@ -335,6 +413,14 @@ export default function Editor({ id }: { id: string }) {
         </div>
         {cues.length === 0 && <button onClick={() => insertAfter(-1)}>Add first line</button>}
       </section>
+
+      <Compare
+        video={video}
+        cues={cues}
+        meta={meta}
+        onUseField={(k, v) => { setMeta((m) => ({ ...m, [k]: v })); setChanged(true); }}
+        onAttached={refreshVersions}
+      />
     </main>
   );
 }

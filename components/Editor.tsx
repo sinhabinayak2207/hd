@@ -7,6 +7,9 @@ import Compare from "@/components/Compare";
 // Fields the pipeline computes or the brief fixes; shown but not editable.
 const LOCKED = new Set(["video_id", "narration_wpm", "narration_language"]);
 
+type Draft = { cues: Cue[]; meta: Record<string, unknown>; reviewed: boolean; base: "ai" | "human"; audioSource: "ai" | "human" };
+const draftKey = (id: string) => `clusterx-draft:${id}`;
+
 function TimeInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const [text, setText] = useState(fmtTime(value));
   const [bad, setBad] = useState(false);
@@ -45,6 +48,12 @@ export default function Editor({ id }: { id: string }) {
   const [base, setBase] = useState<"ai" | "human">("ai");
   const [audioSource, setAudioSource] = useState<"ai" | "human">("ai");
   const [confirmLoad, setConfirmLoad] = useState<"ai" | "human" | null>(null);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [saveError, setSaveError] = useState("");
+  const [retryTick, setRetryTick] = useState(0);
+  const [draft, setDraft] = useState<{ at: number; data: Draft } | null>(null);
+  const rev = useRef(0);
+  const savingRef = useRef(false);
   const audio = useRef<HTMLAudioElement>(null);
   const stopAt = useRef<number | null>(null);
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
@@ -61,6 +70,16 @@ export default function Editor({ id }: { id: string }) {
     setBase(v.base || "ai");
     setAudioSource(v.audio_source === "human" && v.human_audio_path ? "human" : "ai");
     setChanged(false);
+    try {
+      const raw = localStorage.getItem(draftKey(id));
+      if (raw) {
+        const d = JSON.parse(raw) as { at: number; data: Draft };
+        if (d.at > Date.parse(v.edited_at || "1970-01-01")) setDraft(d);
+        else localStorage.removeItem(draftKey(id));
+      }
+    } catch {
+      /* browser storage unavailable */
+    }
   }, [id]);
 
   // The player plays the narration the reviewer chose to deliver.
@@ -182,29 +201,65 @@ export default function Editor({ id }: { id: string }) {
   }, [cues, video?.duration_s]);
 
   const save = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setSavedMsg("");
+    const startRev = rev.current;
     const clean = [...cues]
       .sort((a, b) => a.start - b.start)
-      .map((c) => ({ start: c.start, end: c.end, text: c.text.trim(), label: c.label }));
+      .map((c) => ({ start: c.start, end: c.end, text: c.text, label: c.label }));
     const editedAt = new Date().toISOString();
-    const { error } = await supabase
-      .from("videos")
-      .update({ cues: clean, meta, reviewed, base, audio_source: audioSource, dirty: true, edited_at: editedAt })
-      .eq("id", id);
+    let failed = "";
+    try {
+      const { error } = await supabase
+        .from("videos")
+        .update({ cues: clean, meta, reviewed, base, audio_source: audioSource, dirty: true, edited_at: editedAt })
+        .eq("id", id);
+      if (error) failed = error.message;
+    } catch (e) {
+      failed = e instanceof Error ? e.message : String(e);
+    }
+    savingRef.current = false;
     setSaving(false);
-    if (error) return setError(error.message);
-    setCues(clean);
-    setChanged(false);
+    if (failed) {
+      setSaveError(failed);
+      setTimeout(() => setRetryTick((n) => n + 1), 10000); // try again; the edits stay in this browser meanwhile
+      return;
+    }
+    setSaveError("");
+    setLastSaved(new Date());
     setVideo((v) => (v ? { ...v, dirty: true, edited_at: editedAt, base, audio_source: audioSource } : v));
-    setSavedMsg("Saved. The worker writes the new SRT and JSON to Drive within about a minute.");
+    if (rev.current === startRev) {
+      setChanged(false);
+      try { localStorage.removeItem(draftKey(id)); } catch { /* ignore */ }
+    }
   };
+
+  // Every edit: bump the revision and keep a copy in this browser.
+  useEffect(() => {
+    rev.current += 1;
+    if (!changed) return;
+    try {
+      localStorage.setItem(draftKey(id), JSON.stringify({ at: Date.now(), data: { cues, meta, reviewed, base, audioSource } }));
+    } catch {
+      /* browser storage unavailable */
+    }
+  }, [cues, meta, reviewed, base, audioSource, changed, id]);
+
+  // Autosave 5 seconds after the last edit (and retry after a failed save).
+  useEffect(() => {
+    if (!changed) return;
+    const t = setTimeout(() => save(), 5000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cues, meta, reviewed, base, audioSource, changed, retryTick]);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        if (changed && !saving) save();
+        if (changed) save();
       }
     };
     window.addEventListener("keydown", k);
@@ -220,42 +275,55 @@ export default function Editor({ id }: { id: string }) {
       <div className="row">
         <a href="/">← All videos</a>
       </div>
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <div>
-          <h1>{video.id}</h1>
-          <div className="muted small">
-            {video.source_file} · {video.width}×{video.height} · {fmtTime(video.duration_s || 0)} · AI category: {video.category || "–"}
-          </div>
-        </div>
-        <div className="savebar">
-          <label className="row" style={{ flexDirection: "row", color: "var(--text)", fontSize: 14 }}>
-            <input type="checkbox" checked={reviewed} onChange={(e) => { setReviewed(e.target.checked); setChanged(true); }} />
-            Subtitles reviewed by me
-          </label>
-          <button className="primary" onClick={save} disabled={!changed || saving}>{saving ? "Saving…" : changed ? "Save (Ctrl+S)" : "Saved"}</button>
-          <button
-            disabled={changed}
-            title={changed ? "Save your edits first" : "Download <id>.narration.mp3, <id>.en.srt and <id>.json"}
-            onClick={() => {
-              setDlError("");
-              downloadDeliverables({ ...video, cues, meta, audio_source: audioSource }).catch((e) => setDlError(String(e.message || e)));
-            }}
-          >
-            ⬇ Download files
-          </button>
+      <div>
+        <h1>{video.id}</h1>
+        <div className="muted small">
+          {video.source_file} · {video.width}×{video.height} · {fmtTime(video.duration_s || 0)} · AI category: {video.category || "–"}
         </div>
       </div>
-      {error && <p className="bad">{error}</p>}
-      {dlError && <p className="bad">{dlError}</p>}
-      <div className="row small">
-        <span className="muted">Download one:</span>
+
+      {draft && (
+        <div className="card row" style={{ borderColor: "var(--warn)" }}>
+          <span className="small">This browser has edits from {new Date(draft.at).toLocaleString()} that never reached the server.</span>
+          <button className="primary icon" onClick={() => {
+            setCues(draft.data.cues); setMeta(draft.data.meta); setReviewed(draft.data.reviewed);
+            setBase(draft.data.base); setAudioSource(draft.data.audioSource); setChanged(true); setDraft(null);
+          }}>Restore them</button>
+          <button className="icon" onClick={() => { try { localStorage.removeItem(draftKey(id)); } catch { /* ignore */ } setDraft(null); }}>Discard</button>
+        </div>
+      )}
+
+      <div className="actionbar">
+        <label className="row" style={{ flexDirection: "row", color: "var(--text)", fontSize: 14 }}>
+          <input type="checkbox" checked={reviewed} onChange={(e) => { setReviewed(e.target.checked); setChanged(true); }} />
+          Subtitles reviewed by me
+        </label>
+        <span className="small">
+          {saving ? <span className="pill warn">saving…</span>
+            : saveError ? <span className="pill bad" title={saveError}>save failed, retrying · kept in this browser</span>
+            : changed ? <span className="pill warn">unsaved · autosaves in 5 s</span>
+            : <span className="pill ok">all changes saved{lastSaved ? ` · ${lastSaved.toLocaleTimeString()}` : ""}</span>}
+        </span>
+        <button className="primary" onClick={save} disabled={!changed || saving}>Save now</button>
+        <button
+          className="primary"
+          title="Download <id>.narration.mp3, <id>.en.srt and <id>.json (what you see now)"
+          onClick={() => {
+            setDlError("");
+            downloadDeliverables({ ...video, cues, meta, audio_source: audioSource }).catch((e) => setDlError(String(e.message || e)));
+          }}
+        >
+          ⬇ Download MP3 + SRT + JSON
+        </button>
         {(["mp3", "srt", "json"] as const).map((k) => (
-          <button key={k} className="icon" disabled={changed}
+          <button key={k} className="icon"
             onClick={() => downloadDeliverables({ ...video, cues, meta, audio_source: audioSource }, [k]).catch((e) => setDlError(String(e.message || e)))}>
-            {k === "mp3" ? `${video.id}.narration.mp3` : k === "srt" ? `${video.id}.en.srt` : `${video.id}.json`}
+            ⬇ {k === "mp3" ? `${video.id}.narration.mp3` : k === "srt" ? `${video.id}.en.srt` : `${video.id}.json`}
           </button>
         ))}
       </div>
+      {error && <p className="bad">{error}</p>}
+      {dlError && <p className="bad">{dlError}</p>}
       {savedMsg && <p className="ok">{savedMsg}</p>}
       <p className="small muted">
         Drive: {video.dirty ? <span className="pill warn">sync pending</span> : video.synced_at ? <span className="pill ok">synced {new Date(video.synced_at).toLocaleString()}</span> : <span className="pill none">original output</span>}

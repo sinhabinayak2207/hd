@@ -377,6 +377,13 @@ def sync_edits(drive, db, fields=None):
     """Write subtitle and metadata edits made in the dashboard back to the Drive deliverables."""
     for row in db.dirty():
         vid = row["id"]
+        # The dashboard autosaves every few seconds while someone types; write to Drive once they pause for 30 s.
+        try:
+            edited = time.mktime(time.strptime(row["edited_at"][:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+            if time.time() - edited < 30:
+                continue
+        except (TypeError, ValueError):
+            pass
         out_dir = os.path.join(WORK, "_edits", vid)
         try:
             meta, qc = store.apply_edits(row, out_dir, fields)

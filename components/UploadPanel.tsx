@@ -149,9 +149,9 @@ export default function UploadPanel({ existing }: { existing: Set<string> }) {
   };
 
   return (
-    <section className="card stack">
+    <section className="card stack" id="add" style={{ borderColor: "var(--accent)" }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2 style={{ margin: 0 }}>Add a video</h2>
+        <h2 style={{ margin: 0 }}>＋ Add a video</h2>
         <div className="row" style={{ gap: 6 }}>
           <button className={tab === "file" ? "primary" : ""} onClick={() => setTab("file")}>From computer</button>
           <button className={tab === "link" ? "primary" : ""} onClick={() => setTab("link")}>Google Drive link</button>

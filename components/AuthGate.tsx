@@ -48,6 +48,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     <>
       <header className="topbar">
         <a href="/" className="brand">ClusterX AI</a>
+        <a href="/#add" className="nav">＋ Add video</a>
+        <a href="/" className="nav">Videos</a>
+        <span className="muted small" title="Dashboard build">build {(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7)}</span>
         <span className="muted small">{session.user.email}</span>
         <button className="ghost small" onClick={() => supabase.auth.signOut()}>Sign out</button>
       </header>

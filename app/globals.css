@@ -77,8 +77,11 @@ tr.active td { background: var(--active); }
 .cues input.time { width: 96px; font-variant-numeric: tabular-nums; }
 .cues textarea { width: 100%; min-width: 260px; }
 .num { font-variant-numeric: tabular-nums; }
-.sticky-player { position: sticky; top: 49px; z-index: 4; background: var(--bg); padding: 8px 0; }
+.sticky-player { position: sticky; top: 104px; z-index: 4; background: var(--bg); padding: 8px 0; }
 audio { width: 100%; }
 .issues li { margin: 2px 0; }
 .savebar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .diff { background: var(--warn-bg); }
+.actionbar { position: sticky; top: 49px; z-index: 5; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.topbar .nav { font-weight: 600; }

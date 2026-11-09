@@ -1,0 +1,15 @@
+{
+  "drive_root": "gdrive:Vetto",
+  "rclone": "/mnt/c/Users/sinha/tools/rclone/rclone.exe",
+  "rclone_config": "C:/Users/sinha/AppData/Roaming/rclone/rclone.conf",
+  "whisper_model": "small.en",
+  "contributor_id": "contrib-001",
+  "script_id_prefix": "script-",
+  "metadata_template": "reference_sample.json",
+  "llm": {
+    "base_url": "https://api.commandcode.ai/provider/v1",
+    "api_key": "PUT_YOUR_KEY_HERE",
+    "model": "Qwen/Qwen3.7-Flash",
+    "lines_per_request": 60
+  }
+}

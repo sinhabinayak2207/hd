@@ -109,8 +109,8 @@ class Drive:
     def write_text(self, remote_sub, text):
         self.rc("rcat", f"{self.root}/{remote_sub}", stdin=text)
 
-    def put_dir(self, local_dir, remote_sub):
-        self.rc("copy", self.local(local_dir), f"{self.root}/{remote_sub}")
+    def put_dir(self, local_dir, remote_sub, exclude=()):
+        self.rc("copy", self.local(local_dir), f"{self.root}/{remote_sub}", *[a for x in exclude for a in ("--exclude", x)])
 
     def put_file(self, local_file, remote_sub):
         self.rc("copyto", self.local(local_file), f"{self.root}/{remote_sub}")
@@ -235,7 +235,8 @@ def process_file(drive, cfg, fields, db, src, vid, script, source_name, human=No
         shutil.copyfile(human_mp3, os.path.join(out_dir, f"{vid}.narration.mp3"))
     row["qc"]["delivered_audio"] = row["audio_source"]
     json.dump(row["qc"], open(os.path.join(out_dir, f"{vid}.qc.json"), "w", encoding="utf-8"), indent=2, ensure_ascii=False)
-    drive.put_dir(out_dir, f"output/{vid}")
+    # The person supplies the MP4 themselves, so by default the (often multi-GB) copy is not uploaded again.
+    drive.put_dir(out_dir, f"output/{vid}", () if cfg.get("deliver_mp4") else ("*.mp4",))
     update_report(drive, qc)
     if db.enabled:
         row["files"] = drive.file_ids(f"output/{vid}")

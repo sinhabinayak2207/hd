@@ -19,7 +19,7 @@ import sys
 import time
 import traceback
 
-from vetto import pipeline
+from vetto import pipeline, store
 
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm")
 ROOT = pipeline.ROOT
@@ -120,7 +120,7 @@ def update_report(drive, qc):
     drive.put_file(path, "output/report.csv")
 
 
-def handle(drive, cfg, fields, item, names):
+def handle(drive, cfg, fields, item, names, db):
     name = item["Name"]
     stem = os.path.splitext(name)[0]
     vid = safe_id(stem)
@@ -139,6 +139,9 @@ def handle(drive, cfg, fields, item, names):
         qc = pipeline.process(os.path.join(src_dir, name), out_dir, cfg, vid, script, fields, log=log)
         drive.put_dir(out_dir, f"output/{vid}")
         update_report(drive, qc)
+        if db.enabled:
+            audio = db.upload_audio(vid, os.path.join(out_dir, f"{vid}.narration.mp3"))
+            db.upsert(store.row_from_outputs(out_dir, vid, qc, audio))
         for n in [name] + sidecars:
             drive.move(n, "done")
         bad = [k for k, v in qc["checks"].items() if v["ok"] is False]
@@ -147,6 +150,11 @@ def handle(drive, cfg, fields, item, names):
         err = os.path.join(job, f"{vid}.error.txt")
         open(err, "w", encoding="utf-8").write(f"{type(e).__name__}: {e}\n\n{traceback.format_exc()}")
         log(f"[{vid}] FAILED: {type(e).__name__}: {e}")
+        try:
+            if db.enabled:
+                db.upsert({"id": vid, "source_file": name, "status": "failed", "qc": {"error": f"{type(e).__name__}: {e}"[:500]}})
+        except Exception as e3:  # noqa: BLE001
+            log(f"[{vid}] could not record failure in dashboard: {e3}")
         try:
             drive.put_file(err, f"failed/{vid}.error.txt")
             for n in [name] + sidecars:
@@ -158,12 +166,32 @@ def handle(drive, cfg, fields, item, names):
             shutil.rmtree(job, ignore_errors=True)
 
 
-def tick(drive, cfg, fields):
+def sync_edits(drive, db):
+    """Write subtitle and metadata edits made in the dashboard back to the Drive deliverables."""
+    for row in db.dirty():
+        vid = row["id"]
+        out_dir = os.path.join(WORK, "_edits", vid)
+        try:
+            meta, qc = store.apply_edits(row, out_dir)
+            for f in (f"{vid}.en.srt", f"{vid}.json", f"{vid}.qc.json"):
+                drive.put_file(os.path.join(out_dir, f), f"output/{vid}/{f}")
+            update_report(drive, qc)
+            db.mark_synced(vid, row.get("edited_at"), {"meta": meta, "qc": qc})
+            log(f"[{vid}] dashboard edits written to Drive (wpm {meta.get('narration_wpm')}, reviewed={row.get('reviewed')})")
+        except Exception as e:  # noqa: BLE001
+            log(f"[{vid}] could not write dashboard edits: {type(e).__name__}: {e}")
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+
+def tick(drive, cfg, fields, db):
+    if db.enabled:
+        sync_edits(drive, db)
     items = drive.inbox()
     names = {i["Name"] for i in items}
     for item in sorted(items, key=lambda i: i.get("ModTime", "")):
         if item["Name"].lower().endswith(VIDEO_EXT):
-            handle(drive, cfg, fields, item, names)
+            handle(drive, cfg, fields, item, names, db)
 
 
 def main(argv):
@@ -179,10 +207,12 @@ def main(argv):
         fields = list(json.load(open(os.path.join(ROOT, cfg["metadata_template"]), encoding="utf-8")).keys())
     drive = Drive(cfg)
     drive.setup()
+    db = store.Store(cfg)
+    log(f"dashboard sync: {'on' if db.enabled else 'off (no supabase in config.json)'}")
     log(f"watching {drive.root}/inbox (AI: {cfg['llm'].get('model') or 'not configured'})")
     while True:
         try:
-            tick(drive, cfg, fields)
+            tick(drive, cfg, fields, db)
         except Exception as e:  # noqa: BLE001
             log(f"poll error: {e}")
         if a.once:

@@ -44,6 +44,31 @@ Any OpenAI-compatible endpoint works. Setup: `cp config.example.json config.json
 The default is Command Code (`https://api.commandcode.ai/provider/v1`, model `Qwen/Qwen3.7-Flash`). Its API needs the Provider plan or higher; on the Go plan every call returns `upgrade_required`.
 Without a working key, everything else still runs. Only the descriptive-%, PII, category and summary checks are skipped, and the QC file says why.
 
+## Review dashboard (Vercel + Supabase)
+
+The Next.js app at the repo root (`app/`, `components/`, `lib/`) is the review dashboard. Vercel builds it on every push.
+
+- Sign in with an editor account. Only emails listed in the `editors` table can read or edit, enforced by row-level security.
+- **Videos**: every processed upload, with its checks (length, 1080p, wpm, descriptive %, pauses), review state and Drive sync state.
+- **Video page**:
+  - narration audio player
+  - subtitle editor: edit text, start and end times (or set them from the audio position), the AI label, insert, merge or delete lines
+  - metadata editor (`script_title`, `script_text`, `summary`, IDs)
+  - a "Subtitles reviewed by me" tick
+  - live wpm, descriptive % and pause warnings
+- **Save** (Ctrl+S) stores the edit in Supabase and marks it dirty. Within about a minute, the worker rewrites `<id>.en.srt`, `<id>.json` (wpm recomputed from the edited subtitles), `<id>.qc.json` and `report.csv` in Drive, then marks the video "synced".
+
+How the data moves:
+
+```
+Drive inbox → worker (laptop: ffmpeg + whisper + AI) → Drive output/<id>/ + Supabase row + preview audio
+dashboard edit → Supabase (dirty) → worker → Drive output/<id>/ (srt, json, qc.json)
+```
+
+Supabase setup (already done for the `vetto` project): tables `videos` and `editors`, the private storage bucket `narration` and the RLS policies. The worker uses the secret key from `config.json` → `supabase.secret_key` (local only, never committed). The dashboard uses the publishable key, which is safe in the browser. Override it with `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` if needed.
+
+Add another editor: create the user in Supabase → Authentication, then `insert into editors(email) values ('their@email');`.
+
 ## Running
 
 - Windows: double-click `start_platform.bat`. Or run `wsl -d Ubuntu-24.04 -- bash /mnt/c/Users/sinha/Downloads/vetto_platform/start_platform.sh`.

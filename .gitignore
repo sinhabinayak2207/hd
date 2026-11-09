@@ -10,3 +10,10 @@ __pycache__/
 *.mkv
 *.mp3
 *.wav
+.dashboard_login.txt
+.env*
+node_modules/
+.next/
+.vercel
+*.tsbuildinfo
+next-env.d.ts
